@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: cbse-extractor
+    runtime: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn extractor_server:app --bind 0.0.0.0:$PORT"
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
