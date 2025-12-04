@@ -2,9 +2,10 @@ import io
 import re
 import zipfile
 import requests
-import fitz  # PyMuPDF
+
 from flask import Flask, request, jsonify
 from urllib.parse import urlparse
+from pypdf import PdfReader
 
 app = Flask(__name__)
 
@@ -35,12 +36,13 @@ def extract_pdf_from_zip(data):
 
 
 def extract_text(pdf_bytes):
-    import fitz  # PyMuPDF
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    reader = PdfReader(io.BytesIO(pdf_bytes))
     full = ""
-    for page in doc:
-        full += page.get_text() + "\n\n"
-    return full
+    for page in reader.pages:
+        txt = page.extract_text()
+        if txt:
+            full += txt + "\n\n"
+    return full.strip()
 
 
 def clean(text):
@@ -82,7 +84,7 @@ def parse_metadata(text, filename):
 def split_sections(text):
     sections = {}
 
-    # Instructions (before first "SECTION A" or similar)
+    # Instructions before first SECTION
     inst_end = re.search(r"SECTION\s*[A-Z]", text)
     if inst_end:
         instructions = text[:inst_end.start()].strip()
@@ -91,11 +93,8 @@ def split_sections(text):
 
     sections["instructions"] = instructions
 
-    # GENERAL CBSE patterns
-    pattern = r"(SECTION\s+[A-Z])"
-
-    parts = re.split(pattern, text)
-    # parts example: ["<inst>", "SECTION A", "<content>", "SECTION B", "<content>", ...]
+    # Split sections
+    parts = re.split(r"(SECTION\s+[A-Z])", text)
 
     sec_map = {}
     current = None
@@ -122,16 +121,18 @@ def extract():
         return jsonify({"error": "fileUrl is required"}), 400
 
     try:
-        # Handle local file (uploaded path)
+        # Local file
         if not is_url(fileUrl):
             with open(fileUrl, "rb") as f:
                 raw = f.read()
             filename = fileUrl
+
+        # Remote file
         else:
             raw, ctype = download_bytes(fileUrl)
             filename = urlparse(fileUrl).path.split("/")[-1]
 
-        # Is ZIP?
+        # ZIP?
         if filename.lower().endswith(".zip") or "zip" in ctype.lower():
             pdf_bytes = extract_pdf_from_zip(raw)
             if pdf_bytes is None:
@@ -139,13 +140,13 @@ def extract():
         else:
             pdf_bytes = raw
 
-        # Extract text
+        # Extract text from PDF
         text = extract_text(pdf_bytes)
 
-        # Metadata
+        # Parse metadata
         meta = parse_metadata(text, filename)
 
-        # Structured sections
+        # Split sections
         sections = split_sections(text)
 
         out = {**meta, **sections}
