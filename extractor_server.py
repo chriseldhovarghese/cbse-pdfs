@@ -35,6 +35,7 @@ def extract_pdf_from_zip(data):
 
 
 def extract_text(pdf_bytes):
+    import fitz  # PyMuPDF
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     full = ""
     for page in doc:
